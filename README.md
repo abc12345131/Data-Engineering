@@ -1,2 +1,2 @@
 # Weclouddata
-Projects working in Weclouddata
+Practice Projects
