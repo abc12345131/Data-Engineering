@@ -1,6 +1,18 @@
 # Data Engineering Practice
-## Project 1 Web Scraping with API
-## Project 2 Web Scraping without API
-## Project 3 Machine Learning with scikit-learn
-## Project 4 Machine Learning with Amazon SageMaker
-## Project 5 Data Pipeline with AWS platform
+## Project: 
+### Web Scraping with API
+### Web Scraping without API
+### Machine Learning with scikit-learn
+### Machine Learning with Amazon SageMaker
+### Data Pipeline with AWS platform
+## Templates:
+### Airflow Pipeline
+### Data Analysis
+### Data Warehouse
+### Docker
+### GCP Commend Line Setting
+### GCP Machine Learning
+### Shell Script
+### Spark
+### SQL
+### Web Scraping
