@@ -1,5 +1,5 @@
-# Data Engineering Practice
-## Project: 
+# Data Engineering Repository
+## Projects: 
 ### Web Scraping with API
 ### Web Scraping without API
 ### Machine Learning with scikit-learn
