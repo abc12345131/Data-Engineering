@@ -9,10 +9,10 @@
 ### Airflow Pipeline
 ### Data Analysis
 ### Data Warehouse
+### Database
 ### Docker
 ### GCP Commend Line Setting
 ### GCP Machine Learning
 ### Shell Script
 ### Spark
-### SQL
 ### Web Scraping
