@@ -10,7 +10,7 @@ PROJECT=$1
 shift
 BUCKET=$1
 shift
-MAIN=com.google.cloud.training.dataanalyst.sandiego.$1
+MAIN=com.google.cloud.training.dataanalyst.project.$1
 shift
 
 echo "Launching $MAIN project=$PROJECT bucket=$BUCKET $*"

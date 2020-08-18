@@ -1,7 +1,7 @@
 mvn archetype:generate \
-  -DarchetypeArtifactId=google-cloud-dataflow-java-archetypes-starter \
-  -DarchetypeGroupId=com.google.cloud.dataflow \
-  -DgroupId=com.google.cloud.training.dataanalyst.javahelp \
-  -DartifactId=javahelp2 \
-  -Dversion="[1.0.0,2.0.0]" \
-  -DinteractiveMode=false \
+  -D archetypeArtifactId=google-cloud-dataflow-java-<PROFECT_ID> \
+  -D archetypeGroupId=com.google.cloud.dataflow \
+  -D groupId=com.google.cloud.training.dataanalyst.<PROFECT_ID> \
+  -D artifactId=<PROFECT_ID> \
+  -D version="[1.0.0,2.0.0]" \
+  -D interactiveMode=false \

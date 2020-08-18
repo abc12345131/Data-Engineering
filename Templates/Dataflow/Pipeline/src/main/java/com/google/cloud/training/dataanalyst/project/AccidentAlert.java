@@ -18,6 +18,7 @@ package com.google.cloud.training.dataanalyst.sandiego;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
@@ -29,24 +30,26 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Mean;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.windowing.SlidingWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionView;
 import org.joda.time.Duration;
-import org.joda.time.Instant;
 
 import com.google.api.services.bigquery.model.TableFieldSchema;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
 
 /**
- * A dataflow pipeline that computes average speeds in each lane
+ * A dataflow pipeline that finds lanes in which traffic is much slower than in
+ * adjacent lanes.
  * 
  * @author vlakshmanan
  *
  */
-public class AverageSpeeds {
+public class AccidentAlert {
 
   public static interface MyOptions extends DataflowPipelineOptions {
     @Description("Over how long a time period should we average? (in minutes)")
@@ -60,6 +63,18 @@ public class AverageSpeeds {
     Double getSpeedupFactor();
 
     void setSpeedupFactor(Double d);
+
+    @Description("If speed in lane is x of the average speed, then accident in lane. What is x?")
+    @Default.Double(0.5)
+    Double getRatioThreshold();
+
+    void setRatioThreshold(Double d);
+
+    @Description("Also stream to Bigtable?")
+    @Default.Boolean(false)
+    boolean getBigtable();
+
+    void setBigtable(boolean b);
   }
 
   @SuppressWarnings("serial")
@@ -69,7 +84,8 @@ public class AverageSpeeds {
     Pipeline p = Pipeline.create(options);
 
     String topic = "projects/" + options.getProject() + "/topics/sandiego";
-    String avgSpeedTable = options.getProject() + ":demos.average_speeds";
+    String accidentsTable = options.getProject() + ":demos.accidents";
+    double RATIO = options.getRatioThreshold();
 
     // if we need to average over 60 minutes and speedup is 30x
     // then we need to average over 2 minutes of sped-up stream
@@ -103,30 +119,48 @@ public class AverageSpeeds {
           }
         }));
 
-    PCollection<KV<String, Double>> avgSpeed = currentConditions //
+    if (options.getBigtable()) {
+      BigtableHelper.writeToBigtable(currentConditions, options);
+    }
+
+    PCollection<LaneInfo> laneInfo = currentConditions //
         .apply("TimeWindow",
             Window.into(SlidingWindows//
                 .of(averagingInterval)//
-                .every(averagingFrequency))) //
-        .apply("BySensor", ParDo.of(new DoFn<LaneInfo, KV<String, Double>>() {
+                .every(averagingFrequency)));
+
+    PCollectionView<Map<String, Double>> avgSpeedLocation = laneInfo //
+        .apply("ByLocation", ParDo.of(new DoFn<LaneInfo, KV<String, Double>>() {
           @ProcessElement
           public void processElement(ProcessContext c) throws Exception {
             LaneInfo info = c.element();
-            String key = info.getSensorKey();
+            String key = info.getLocationKey();
             Double speed = info.getSpeed();
             c.output(KV.of(key, speed));
           }
         })) //
-        .apply("AvgBySensor", Mean.perKey());
+        .apply("AvgByLocation", Mean.perKey()) //
+        .apply("ToView", View.asMap());
 
-    avgSpeed.apply("ToBQRow", ParDo.of(new DoFn<KV<String, Double>, TableRow>() {
+    PCollection<LaneInfo> accidents = laneInfo.apply("FindSlowdowns", ParDo.of(new DoFn<LaneInfo, LaneInfo>() {
+      @ProcessElement
+      public void processElement(ProcessContext c) throws Exception {
+        LaneInfo info = c.element();
+        String location = info.getLocationKey();
+        double speed = info.getSpeed();
+        double avgSpeed = c.sideInput(avgSpeedLocation).get(location);
+        if (speed < RATIO * avgSpeed) {
+          // 50% of average speed?
+          c.output(info);
+        }
+      }
+    }).withSideInputs(avgSpeedLocation)); //
+
+    accidents.apply("ToBQRow", ParDo.of(new DoFn<LaneInfo, TableRow>() {
       @ProcessElement
       public void processElement(ProcessContext c) throws Exception {
         TableRow row = new TableRow();
-        String stationKey = c.element().getKey();
-        Double speed = c.element().getValue();
-        String line = Instant.now().toString() + "," + stationKey + "," + speed; // CSV
-        LaneInfo info = LaneInfo.newLaneInfo(line);
+        LaneInfo info = c.element();
         row.set("timestamp", info.getTimestamp());
         row.set("latitude", info.getLatitude());
         row.set("longitude", info.getLongitude());
@@ -138,7 +172,7 @@ public class AverageSpeeds {
         c.output(row);
       }
     })) //
-        .apply(BigQueryIO.writeTableRows().to(avgSpeedTable)//
+        .apply(BigQueryIO.writeTableRows().to(accidentsTable)//
             .withSchema(schema)//
             .withWriteDisposition(BigQueryIO.Write.WriteDisposition.WRITE_APPEND)
             .withCreateDisposition(BigQueryIO.Write.CreateDisposition.CREATE_IF_NEEDED));
