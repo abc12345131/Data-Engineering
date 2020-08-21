@@ -1,0 +1,1 @@
+SELECT  FROM ML.WEIGHTS(MODEL bike_model.model_bucketized)
