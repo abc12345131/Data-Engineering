@@ -8,11 +8,7 @@ nano submit_onejob.sh
 
 #Paste the following into the script:
 #!/bin/bash
-gcloud dataproc jobs submit pyspark \
-       --cluster sparktodp \
-       --region us-central1 \
-       spark_analysis.py \
-       -- --bucket=$1
+gcloud dataproc jobs submit pyspark --id=mjtelco-test-1 --cluster=mjtelco --region=global gs://qwiklabs-gcp-01-52268eca75ba/benchmark.py -- 20
 
 #Press CTRL+X then Y to exit and save.
 
