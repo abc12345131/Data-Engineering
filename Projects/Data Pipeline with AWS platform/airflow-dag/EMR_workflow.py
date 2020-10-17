@@ -19,7 +19,7 @@ DEFAULT_ARGS = {
     'email_on_retry': False
 }
 
-CLUSTER_ID = 'j-1BYK1CUUU6QN8'
+CLUSTER_ID = 'j-1RFMC7DZOD6ZX'
 
 
 dag = DAG(
