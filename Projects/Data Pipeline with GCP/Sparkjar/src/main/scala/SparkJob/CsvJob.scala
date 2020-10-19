@@ -12,12 +12,12 @@ object CsvJob {
                     .appName(sparkParams.parser)
                     .getOrCreate()
 
-        // Homework: change the way we use the option to inOption
         val data = spark.read.options(sparkParams.inOptions).csv(sparkParams.inPath)
 
         // transformation logic below
         val resultDF = data.withColumn("source", lit("wcd"))
 
+        // write to storage
         resultDF.write
         .partitionBy(sparkParams.partitionColumn)
         .options(sparkParams.outOptions)
