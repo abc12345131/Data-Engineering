@@ -76,7 +76,7 @@ object MainApp {
                 opt[String]('c', "partition-column")
                 .required()
                 .valueName("<partition-column>")
-                .action((x, c) => c.copy(partitionColumn = x)
+                .action((x, c) => c.copy(partitionColumn = x))
                 .text( """The column(s) being used to partition on. coma seperated. For example: name,date"""),
 
                 opt[Map[String, String]]("input-options")
@@ -88,7 +88,8 @@ object MainApp {
                 opt[Map[String, String]]("output-options")
                 .optional()
                 .valueName("k1=v1,k2=v2...")
-                .action((x, c) => c.copy(outOptions = x)).text("Spark read output options"))
+                .action((x, c) => c.copy(outOptions = x)).text("Spark read output options")
+            )
         }
         
         OParser.parse(cmdParser, args, SparkParams())
