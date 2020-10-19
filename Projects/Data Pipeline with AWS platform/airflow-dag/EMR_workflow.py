@@ -54,7 +54,7 @@ SPARK_TEST_STEPS = [
                 '--driver-memory','512m',
                 '--executor-memory','3g',
                 '--executor-cores','2',
-                's3a://dataengineering-test/banking.csv',
+                's3://dataengineering-test/wcd_final_project_2.11-0.1.jar',
                 '-p','Csvparser',
                 '-i','Csv',
                 '-o','parquet',                

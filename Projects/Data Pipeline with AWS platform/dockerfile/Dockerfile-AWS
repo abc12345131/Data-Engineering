@@ -2,4 +2,6 @@ from puckel/docker-airflow:1.10.9
 RUN pip install boto3
 RUN mkdir .aws/
 RUN touch .aws/config
-RUN echo "[default]\nregion = us-east-1\noutput = json" >> .aws/config
+RUN echo [default] >> .aws/config
+RUN echo region = us-east-1 >> .aws/config
+RUN echo output = json >> .aws/config
