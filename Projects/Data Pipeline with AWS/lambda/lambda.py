@@ -4,7 +4,7 @@ import json
 import subprocess
 def lambda_handler(event, context):
     # TODO implement
-    print('Batch 4 engineer event handle: ' + str(event))
+    print('dataengineering event handle: ' + str(event))
     records = event['Records'][0]['s3']
     bucket_name = records['bucket']['name']
     file_name = records['object']['key']
@@ -16,6 +16,6 @@ def lambda_handler(event, context):
     subprocess.run(["curl", "-X", "POST", "{}/api/experimental/dags/EMR_JOB_FLOW_DAG/dag_runs".format(endpoint), "--insecure", "-d", data])
     return {
         'statusCode': 200,
-        'body': json.dumps('Hello from Lambda!')
+        'body': json.dumps('Lambda is working!')
     }
     
