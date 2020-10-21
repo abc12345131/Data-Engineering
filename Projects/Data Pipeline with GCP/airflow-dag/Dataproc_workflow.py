@@ -51,7 +51,7 @@ with dag:
                              python_callable=retrieve_gs_file)
     def ensure_cluster_exists():
             cluster = DataProcHook().get_conn().projects().regions().clusters().get(
-                projectId=Variable.get('project'),
+                project_Id=Variable.get('project'),
                 region=Variable.get('region'),
                 clusterName=CLUSTER_NAME
             ).execute(num_retries=3)
@@ -85,29 +85,7 @@ with dag:
         # service_account=Variable.get('serviceAccount')
     )
 
-    class PatchedDataProcSparkOperator(DataProcSparkOperator):
-        """
-        Workaround for DataProcSparkOperator.execute()
-        not passing project_id to DataProcHook
-        """
-        def __init__(self, project_id=None, *args, **kwargs):
-            self.project_id = project_id
-            super(PatchedDataProcSparkOperator, self).__init__(*args, **kwargs)
-
-        def execute(self, context):
-            hook = DataProcHook(gcp_conn_id=self.gcp_conn_id,
-                                delegate_to=self.delegate_to)
-            job = hook.create_job_template(self.task_id, self.cluster_name, "sparkJob",
-                                            self.dataproc_properties)
-            job.set_main(self.main_jar, self.main_class)
-            job.add_args(self.arguments)
-            job.add_jar_file_uris(self.dataproc_jars)
-            job.add_archive_uris(self.archives)
-            job.add_file_uris(self.files)
-            job.set_job_name(self.job_name)
-            hook.submit(self.project_id, job.build(), self.region)
-
-    step_adder = PatchedDataProcSparkOperator(
+    step_adder = DataProcSparkOperator(
         task_id='step_adder',
         project_id=Variable.get('project'),
         main_class='Driver.MainApp',
@@ -128,11 +106,10 @@ with dag:
 
     
     step_checker = DataprocJobSensor(
-        project_id='step_checker',
-        location='',
-        dataproc_job_id=CLUSTER_ID,
-        step_id="{{ task_instance.xcom_pull('add_steps', key='return_value')[0] }}",
-        gcp_conn_id='google_cloud_default', 
+        task_id='step_checker',
+        project_id=Variable.get('project'),        
+        location=Variable.get('region'),
+        dataproc_job_id="{{ task_instance.xcom_pull(task_ids='step_adder') }}",
         dag=dag
     )
 
