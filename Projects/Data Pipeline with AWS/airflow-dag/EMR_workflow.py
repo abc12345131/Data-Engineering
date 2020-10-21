@@ -2,12 +2,12 @@
 
 from datetime import timedelta
 
-import airflow
-from airflow import DAG
+from airflow import DAG, utils
 from airflow.contrib.operators.emr_add_steps_operator import EmrAddStepsOperator
 from airflow.contrib.sensors.emr_step_sensor import EmrStepSensor
 from airflow.contrib.operators.emr_terminate_job_flow_operator import EmrTerminateJobFlowOperator
 from airflow.operators.python_operator import PythonOperator
+from airflow.operators.dummy_operator import DummyOperator
 
 
 DEFAULT_ARGS = {
@@ -17,6 +17,8 @@ DEFAULT_ARGS = {
     'email': ['wbl@example.com'],
     'email_on_failure': False,
     'email_on_retry': False
+    'retries': 3,
+    'retry_delay': timedelta(minutes=10)
 }
 
 CLUSTER_ID = 'j-1RFMC7DZOD6ZX'
@@ -70,7 +72,7 @@ SPARK_TEST_STEPS = [
 
 
 step_adder = EmrAddStepsOperator(
-    task_id='add_steps',
+    task_id='step_adder',
     job_flow_id=CLUSTER_ID,
     aws_conn_id='aws_default',
     steps=SPARK_TEST_STEPS,
@@ -78,12 +80,23 @@ step_adder = EmrAddStepsOperator(
 )
 
 step_checker = EmrStepSensor(
-    task_id='watch_step',
+    task_id='step_checker',
     job_flow_id=CLUSTER_ID,
-    step_id="{{ task_instance.xcom_pull('add_steps', key='return_value')[0] }}",
+    step_id="{{ task_instance.xcom_pull('step_adder', key='return_value')[0] }}",
     aws_conn_id='aws_default',
     dag=dag
 )
 
-step_adder.set_upstream(parse_request)
-step_checker.set_upstream(step_adder)
+cluster_terminator = EmrTerminateJobFlowOperator(
+    job_flow_id=CLUSTER_ID,
+    aws_conn_id='aws_default',
+    dag=dag
+)
+
+end = DummyOperator(
+    task_id='end',
+    trigger_rule='one_success',
+    dag=dag
+)
+
+parse_request >> step_adder >> step_checker >> cluster_terminator >> end

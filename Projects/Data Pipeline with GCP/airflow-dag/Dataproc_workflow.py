@@ -1,15 +1,24 @@
 # -*- coding: utf-8 -*-
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-import airflow
-from airflow import DAG
-from airflow.providers.google.cloud.operators.dataproc import DataprocSubmitSparkJobOperator
+from airflow import DAG, utils
+from airflow.models import Variable
+from airflow.contrib.operators.dataproc_operator import DataprocClusterCreateOperator, \
+    DataprocClusterDeleteOperator, DataProcSparkOperator
 from airflow.providers.google.cloud.sensors.dataproc import DataprocJobSensor
-from airflow.contrib.sensors.emr_step_sensor import EmrStepSensor
-from airflow.contrib.operators.emr_terminate_job_flow_operator import EmrTerminateJobFlowOperator
-from airflow.operators.python_operator import PythonOperator
+from airflow.operators.python_operator import PythonOperator, BranchPythonOperator
+from airflow.operators.dummy_operator import DummyOperator
+from airflow.contrib.hooks.gcp_dataproc_hook import DataProcHook
 
+'''
+In the Airflow UI, set variables:
+project: GCP project id
+region: GCP region ('us-east1')
+subnet: VPC subnet id (short id, not the full uri) for me it's default
+zone: GCP zone ('us-east1-d')
+serviceAccount: if not provided, google default serviceAccount will be used
+'''
 
 DEFAULT_ARGS = {
     'owner': 'airflow',
@@ -17,11 +26,13 @@ DEFAULT_ARGS = {
     'start_date': airflow.utils.dates.days_ago(0),
     'email': ['wbl@example.com'],
     'email_on_failure': False,
-    'email_on_retry': False
+    'email_on_retry': False,
+    'retries': 3,
+    'retry_delay': timedelta(minutes=10)
 }
 
-CLUSTER_ID = 'j-1RFMC7DZOD6ZX'
-
+CLUSTER_NAME = 'dataengineering-test'
+JOB_NAME = '{{task.task_id}}-{{ds-nodash}}'
 
 dag = DAG(
     'dataproc_job_flow_dag',
@@ -30,69 +41,113 @@ dag = DAG(
     schedule_interval= None
 )
 
-def retrieve_s3_file(**kwargs):
-    gs_location = kwargs['dag_run'].conf['gs_location'] 
-    kwargs['ti'].xcom_push( key = 'gslocation', value = gs_location)
+with dag:
+    def retrieve_gs_file(**kwargs):
+        gs_location = kwargs['dag_run'].conf['gs_location'] 
+        kwargs['ti'].xcom_push( key = 'gslocation', value = gs_location)
 
-parse_request = PythonOperator(task_id='parse_request',
+    parse_request = PythonOperator(task_id='parse_request',
                              provide_context=True,
-                             python_callable=retrieve_gs_file,
-                             dag=dag)
+                             python_callable=retrieve_gs_file)
+    def ensure_cluster_exists():
+            cluster = DataProcHook().get_conn().projects().regions().clusters().get(
+                projectId=Variable.get('project'),
+                region=Variable.get('region'),
+                clusterName=CLUSTER_NAME
+            ).execute(num_retries=3)
+            if cluster is None or len(cluster) == 0 or 'clusterName' not in cluster:
+                return 'cluster_creater'
+            else:
+                return 'step_adder'
 
+    cluster_checker = BranchPythonOperator(
+            task_id='cluster_checker',
+            provide_context=True,
+            python_callable=ensure_cluster_exists
+        )
 
-SPARK_TEST_STEPS = [
-    {
-        'Name': 'datajob',
-        'ActionOnFailure': 'CONTINUE',
-        'HadoopJarStep': {
-            'Jar': 'command-runner.jar',
-            'Args': [
-                '/usr/bin/spark-submit', 
-                '--class', 'Driver.MainApp',
-                '--master', 'yarn',
-                '--deploy-mode','cluster',
-                '--num-executors','2',
-                '--driver-memory','512m',
-                '--executor-memory','3g',
-                '--executor-cores','2',
-                # 'gs://dataengineering-test/spark-engine_2.11-0.0.1.jar',
-                # '-p','Csvparser',
-                # '-i','Csv',
-                # '-o','parquet',                
-                # '-s', "{{ task_instance.xcom_pull('parse_request', key='gslocation') }}", #'-s','gs://dataengineering-test/banking.csv',
-                # '-d','s3a://dataengineering-test/results/',
-                # '-c','job',
-                # '-m','append',
-                # '--input-options','header=true'
-            ]
-        }
-    }
-]
+    cluster_creater = DataprocClusterCreateOperator(
+        task_id='cluster_creater',
+        cluster_name=CLUSTER_NAME,
+        project_id=Variable.get('project'),
+        num_workers=1,
+        master_disk_size=50,
+        worker_disk_size=50,
+        image_version='1.5',
+        internal_ip_only=True,
+        tags=['dataproc'],
+        labels={'dataproc-cluster': CLUSTER_NAME},
+        zone=Variable.get('zone'),
+        subnetwork_uri='projects/{}/region/{}/subnetworks/{}'.format(
+            Variable.get('project'),
+            Variable.get('region'),
+            Variable.get('subnet')),
+        # service_account=Variable.get('serviceAccount')
+    )
 
+    class PatchedDataProcSparkOperator(DataProcSparkOperator):
+        """
+        Workaround for DataProcSparkOperator.execute()
+        not passing project_id to DataProcHook
+        """
+        def __init__(self, project_id=None, *args, **kwargs):
+            self.project_id = project_id
+            super(PatchedDataProcSparkOperator, self).__init__(*args, **kwargs)
 
-step_adder = DataprocSubmitSparkJobOperator(
-    task_id='add_steps',
-    job_flow_id=CLUSTER_ID,
-    aws_conn_id='aws_default',
-    main_jar='gs://dataengineering-test/spark-engine_2.11-0.0.1.jar',
-    arguments=[ 'p=Csvparser',
-                'i=Csv','o=parquet',
-                's={{ task_instance.xcom_pull("parse_request", key="gslocation") }}',
-                'd=gs://dataengineering-test/results/',
-                'c=job',
-                'm=append',
-                'input-options="header=true"']
-    dag=dag
-)
+        def execute(self, context):
+            hook = DataProcHook(gcp_conn_id=self.gcp_conn_id,
+                                delegate_to=self.delegate_to)
+            job = hook.create_job_template(self.task_id, self.cluster_name, "sparkJob",
+                                            self.dataproc_properties)
+            job.set_main(self.main_jar, self.main_class)
+            job.add_args(self.arguments)
+            job.add_jar_file_uris(self.dataproc_jars)
+            job.add_archive_uris(self.archives)
+            job.add_file_uris(self.files)
+            job.set_job_name(self.job_name)
+            hook.submit(self.project_id, job.build(), self.region)
 
-step_checker = DataprocJobSensor(
-    project_id='watch_step',
-    location='',
-    dataproc_job_id=CLUSTER_ID,
-    step_id="{{ task_instance.xcom_pull('add_steps', key='return_value')[0] }}",
-    gcp_conn_id='google_cloud_default', 
-    dag=dag
-)
+    step_adder = PatchedDataProcSparkOperator(
+        task_id='step_adder',
+        project_id=Variable.get('project'),
+        main_class='Driver.MainApp',
+        arguments=[
+            '-p','Csvparser',
+            '-i','Csv',
+            '-o','parquet',                
+            '-s', "{{ task_instance.xcom_pull('parse_request', key='gslocation') }}", #'-s','gs://dataengineering-test/banking.csv',
+            '-d','s3a://dataengineering-test/results/',
+            '-c','job',
+            '-m','append',
+            '--input-options','header=true'
+        ],
+        job_name=JOB_NAME,
+        cluster_name=CLUSTER_NAME,
+        dataproc_spark_jars=['gs://dataengineering-test/spark-engine_2.11-0.0.1.jar']
+    )
 
-step_adder.set_upstream(parse_request)
-step_checker.set_upstream(step_adder)
+    
+    step_checker = DataprocJobSensor(
+        project_id='step_checker',
+        location='',
+        dataproc_job_id=CLUSTER_ID,
+        step_id="{{ task_instance.xcom_pull('add_steps', key='return_value')[0] }}",
+        gcp_conn_id='google_cloud_default', 
+        dag=dag
+    )
+
+    cluster_terminator = DataprocClusterDeleteOperator(
+        task_id='cluster_terminator',
+        cluster_name=CLUSTER_NAME,
+        project_id=Variable.get('project')
+    )
+
+    end = DummyOperator(
+        task_id='end',
+        trigger_rule='one_success'
+    )
+
+    parse_request >> cluster_checker
+    cluster_checker >> cluster_creater >> step_adder
+    cluster_checker >> step_adder
+    step_adder >> cluster_terminator >> end
