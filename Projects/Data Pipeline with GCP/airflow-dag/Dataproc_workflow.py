@@ -4,7 +4,8 @@ from datetime import timedelta
 
 import airflow
 from airflow import DAG
-from airflow.contrib.operators.emr_add_steps_operator import EmrAddStepsOperator
+from airflow.providers.google.cloud.operators.dataproc import DataprocSubmitSparkJobOperator
+from airflow.providers.google.cloud.sensors.dataproc import DataprocJobSensor
 from airflow.contrib.sensors.emr_step_sensor import EmrStepSensor
 from airflow.contrib.operators.emr_terminate_job_flow_operator import EmrTerminateJobFlowOperator
 from airflow.operators.python_operator import PythonOperator
@@ -23,19 +24,19 @@ CLUSTER_ID = 'j-1RFMC7DZOD6ZX'
 
 
 dag = DAG(
-    'emr_job_flow_dag',
+    'dataproc_job_flow_dag',
     default_args=DEFAULT_ARGS,
     dagrun_timeout=timedelta(hours=1),
     schedule_interval= None
 )
 
 def retrieve_s3_file(**kwargs):
-    s3_location = kwargs['dag_run'].conf['s3_location'] 
-    kwargs['ti'].xcom_push( key = 's3location', value = s3_location)
+    gs_location = kwargs['dag_run'].conf['gs_location'] 
+    kwargs['ti'].xcom_push( key = 'gslocation', value = gs_location)
 
 parse_request = PythonOperator(task_id='parse_request',
                              provide_context=True,
-                             python_callable=retrieve_s3_file,
+                             python_callable=retrieve_gs_file,
                              dag=dag)
 
 
@@ -54,34 +55,42 @@ SPARK_TEST_STEPS = [
                 '--driver-memory','512m',
                 '--executor-memory','3g',
                 '--executor-cores','2',
-                's3a://dataengineering-test/banking.csv',
-                '-p','Csvparser',
-                '-i','Csv',
-                '-o','parquet',                
-                '-s', "{{ task_instance.xcom_pull('parse_request', key='s3location') }}", #'-s','s3a://dataengineering-test/banking.csv',
-                '-d','s3a://dataengineering-test/results/',
-                '-c','job',
-                '-m','append',
-                '--input-options','header=true'
+                # 'gs://dataengineering-test/spark-engine_2.11-0.0.1.jar',
+                # '-p','Csvparser',
+                # '-i','Csv',
+                # '-o','parquet',                
+                # '-s', "{{ task_instance.xcom_pull('parse_request', key='gslocation') }}", #'-s','gs://dataengineering-test/banking.csv',
+                # '-d','s3a://dataengineering-test/results/',
+                # '-c','job',
+                # '-m','append',
+                # '--input-options','header=true'
             ]
         }
     }
 ]
 
 
-step_adder = EmrAddStepsOperator(
+step_adder = DataprocSubmitSparkJobOperator(
     task_id='add_steps',
     job_flow_id=CLUSTER_ID,
     aws_conn_id='aws_default',
-    steps=SPARK_TEST_STEPS,
+    main_jar='gs://dataengineering-test/spark-engine_2.11-0.0.1.jar',
+    arguments=[ 'p=Csvparser',
+                'i=Csv','o=parquet',
+                's={{ task_instance.xcom_pull("parse_request", key="gslocation") }}',
+                'd=gs://dataengineering-test/results/',
+                'c=job',
+                'm=append',
+                'input-options="header=true"']
     dag=dag
 )
 
-step_checker = EmrStepSensor(
-    task_id='watch_step',
-    job_flow_id=CLUSTER_ID,
+step_checker = DataprocJobSensor(
+    project_id='watch_step',
+    location='',
+    dataproc_job_id=CLUSTER_ID,
     step_id="{{ task_instance.xcom_pull('add_steps', key='return_value')[0] }}",
-    aws_conn_id='aws_default',
+    gcp_conn_id='google_cloud_default', 
     dag=dag
 )
 
