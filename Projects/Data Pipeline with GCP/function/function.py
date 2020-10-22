@@ -17,7 +17,7 @@ def function_handler(event, context):
 
     airflow_uri = 'https://b644c9698bf432494p-tp.appspot.com'
     dag_name = 'dataproc_job_flow_dag'
-    webserver_url = 'https://' + airflow_uri + '.appspot.com/api/experimental/dags/' + dag_name + '/dag_runs'
+    webserver_url = airflow_uri + '/api/experimental/dags/' + dag_name + '/dag_runs'
 
     # The Composer environment response does not include the IAP client ID.
     # Make a second, unauthenticated HTTP request to the web server to get the
@@ -39,10 +39,25 @@ def function_handler(event, context):
     # Fetch the Identity-Aware Proxy-protected URL, including an
     # Authorization header containing "Bearer " followed by a
     # Google-issued OpenID Connect token for the service account.   
+
     returncode = subprocess.run(["curl", "-X", "POST", webserver_url, "-H","Authorization: Bearer {}".format(
         google_open_id_connect_token), "--insecure", "-d", data])
         
     print('returncode:', returncode)
+
+    # resp = requests.request(
+    #     method="POST", webserver_url,
+    #     headers={'Authorization': 'Bearer {}'.format(
+    #         google_open_id_connect_token)}, json=data)
+    # if resp.status_code == 403:
+    #     raise Exception('Service account does not have permission to '
+    #                     'access the IAP-protected application.')
+    # elif resp.status_code != 200:
+    #     raise Exception(
+    #         'Bad response from application: {!r} / {!r} / {!r}'.format(
+    #             resp.status_code, resp.headers, resp.text))
+    # else:
+    #     return resp.text
 
     return {
         'statusCode': 200,
