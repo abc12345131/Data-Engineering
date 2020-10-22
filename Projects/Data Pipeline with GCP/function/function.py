@@ -5,9 +5,6 @@ from google.oauth2 import id_token
 import requests
 import six.moves.urllib.parse
 
-IAM_SCOPE = 'https://www.googleapis.com/auth/iam'
-OAUTH_TOKEN_URI = 'https://www.googleapis.com/oauth2/v4/token'
-
 def function_handler(event, context):
 
     file = event
@@ -44,6 +41,7 @@ def function_handler(event, context):
     # Google-issued OpenID Connect token for the service account.   
     returncode = subprocess.run(["curl", "-X", "POST", webserver_url, "-H","Authorization: Bearer {}".format(
         google_open_id_connect_token), "--insecure", "-d", data])
+        
     print('returncode:', returncode)
 
     return {
