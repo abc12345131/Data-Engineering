@@ -1,4 +1,3 @@
-import json
 import os
 import json
 import subprocess
@@ -13,7 +12,8 @@ def lambda_handler(event, context):
     endpoint =  os.environ['AIRFLOW_ENDPOINT']
     data = json.dumps({"conf":{"s3_location": process_data}})
     print('The airflow payload: ' + str(data))
-    subprocess.run(["curl", "-X", "POST", "{}/api/experimental/dags/EMR_JOB_FLOW_DAG/dag_runs".format(endpoint), "--insecure", "-d", data])
+    returncode = subprocess.run(["curl", "-X", "POST", "{}/api/experimental/dags/emr_job_flow_dag/dag_runs".format(endpoint), "--insecure", "-d", data])
+    print('returncode:', returncode)
     return {
         'statusCode': 200,
         'body': json.dumps('Lambda is working!')

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime, timedelta
-
+import airflow
 from airflow import DAG, utils
 from airflow.models import Variable
 from airflow.contrib.operators.dataproc_operator import DataprocClusterCreateOperator, \
@@ -23,7 +23,7 @@ serviceAccount: if not provided, google default serviceAccount will be used
 DEFAULT_ARGS = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': airflow.utils.dates.days_ago(0),
+    'start_date': airflow.utils.dates.days_ago(1),
     'email': ['wbl@example.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -46,25 +46,29 @@ with dag:
         gs_location = kwargs['dag_run'].conf['gs_location'] 
         kwargs['ti'].xcom_push( key = 'gslocation', value = gs_location)
 
-    parse_request = PythonOperator(task_id='parse_request',
-                             provide_context=True,
-                             python_callable=retrieve_gs_file)
+    parse_request = PythonOperator(
+        task_id='parse_request',
+        provide_context=True,
+        python_callable=retrieve_gs_file
+    )
+
+
     def ensure_cluster_exists():
-            cluster = DataProcHook().get_conn().projects().regions().clusters().get(
-                project_Id=Variable.get('project'),
-                region=Variable.get('region'),
-                clusterName=CLUSTER_NAME
-            ).execute(num_retries=3)
-            if cluster is None or len(cluster) == 0 or 'clusterName' not in cluster:
-                return 'cluster_creater'
-            else:
-                return 'step_adder'
+        cluster = DataProcHook().get_conn().projects().regions().clusters().get(
+            project_Id=Variable.get('project'),
+            region=Variable.get('region'),
+            clusterName=CLUSTER_NAME
+        ).execute(num_retries=3)
+        if cluster is None or len(cluster) == 0 or 'clusterName' not in cluster:
+            return 'cluster_creater'
+        else:
+            return 'step_adder'
 
     cluster_checker = BranchPythonOperator(
-            task_id='cluster_checker',
-            provide_context=True,
-            python_callable=ensure_cluster_exists
-        )
+        task_id='cluster_checker',
+        provide_context=True,
+        python_callable=ensure_cluster_exists
+    )
 
     cluster_creater = DataprocClusterCreateOperator(
         task_id='cluster_creater',
@@ -94,7 +98,7 @@ with dag:
             '-i','Csv',
             '-o','parquet',                
             '-s', "{{ task_instance.xcom_pull('parse_request', key='gslocation') }}", #'-s','gs://dataengineering-test/banking.csv',
-            '-d','s3a://dataengineering-test/results/',
+            '-d','gs://dataengineering-test/results/',
             '-c','job',
             '-m','append',
             '--input-options','header=true'
@@ -127,4 +131,4 @@ with dag:
     parse_request >> cluster_checker
     cluster_checker >> cluster_creater >> step_adder
     cluster_checker >> step_adder
-    step_adder >> cluster_terminator >> end
+    step_adder >> step_checker >> cluster_terminator >> end

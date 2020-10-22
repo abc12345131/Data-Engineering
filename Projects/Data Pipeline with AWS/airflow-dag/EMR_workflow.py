@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from datetime import timedelta
-
+import airflow
 from airflow import DAG, utils
 from airflow.contrib.operators.emr_add_steps_operator import EmrAddStepsOperator
 from airflow.contrib.sensors.emr_step_sensor import EmrStepSensor
@@ -13,7 +13,7 @@ from airflow.operators.dummy_operator import DummyOperator
 DEFAULT_ARGS = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': airflow.utils.dates.days_ago(0),
+    'start_date': airflow.utils.dates.days_ago(1),
     'email': ['wbl@example.com'],
     'email_on_failure': False,
     'email_on_retry': False
@@ -33,12 +33,14 @@ dag = DAG(
 
 def retrieve_s3_file(**kwargs):
     s3_location = kwargs['dag_run'].conf['s3_location'] 
-    kwargs['ti'].xcom_push( key = 's3location', value = s3_location)
+    kwargs['ti'].xcom_push(key = 's3location', value = s3_location)
 
-parse_request = PythonOperator(task_id='parse_request',
-                             provide_context=True,
-                             python_callable=retrieve_s3_file,
-                             dag=dag)
+parse_request = PythonOperator(
+    task_id='parse_request',
+    provide_context=True,
+    python_callable=retrieve_s3_file,
+    dag=dag
+)
 
 
 SPARK_TEST_STEPS = [
