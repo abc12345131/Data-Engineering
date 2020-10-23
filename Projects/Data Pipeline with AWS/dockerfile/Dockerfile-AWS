@@ -1,4 +1,4 @@
-from puckel/docker-airflow:1.10.9
+FROM puckel/docker-airflow:1.10.9
 RUN pip install boto3
 RUN mkdir .aws/
 RUN touch .aws/config
