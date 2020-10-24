@@ -18,7 +18,7 @@ DEFAULT_ARGS = {
     'email_on_failure': False,
     'email_on_retry': False
     'retries': 3,
-    'retry_delay': timedelta(minutes=10)
+    'retry_delay': timedelta(minutes=60)
 }
 
 CLUSTER_ID = 'j-1RFMC7DZOD6ZX'
@@ -62,8 +62,8 @@ SPARK_TEST_STEPS = [
                 '-p','Csvparser',
                 '-i','Csv',
                 '-o','parquet',                
-                '-s', "{{ task_instance.xcom_pull('parse_request', key='s3location') }}", #'-s','s3a://dataengineering-test/banking.csv',
-                '-d','s3a://dataengineering-test/results/',
+                '-s', "{{ task_instance.xcom_pull('parse_request', key='s3location') }}", #'s3a://dataengineering-test/banking.csv'
+                '-d','s3a://datapipeline-test-result/',
                 '-c','job',
                 '-m','append',
                 '--input-options','header=true'
