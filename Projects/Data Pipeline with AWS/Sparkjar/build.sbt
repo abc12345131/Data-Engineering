@@ -1,6 +1,6 @@
 name := "spark-engine"
 version := "0.0.1"
-scalaVersion := "2.11.11"
+scalaVersion := "2.12.3"
 
 val sparkVersion = "2.4.4"
 libraryDependencies ++= Seq(
