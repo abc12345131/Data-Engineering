@@ -17,7 +17,7 @@ project: GCP project id
 region: GCP region ('us-east1')
 subnet: VPC subnet id (short id, not the full uri) for me it's default
 zone: GCP zone ('us-east1-d')
-serviceAccount: if not provided, google default serviceAccount will be used
+
 '''
 
 DEFAULT_ARGS = {
@@ -27,12 +27,10 @@ DEFAULT_ARGS = {
     'email': ['wbl@example.com'],
     'email_on_failure': False,
     'email_on_retry': False,
-    'retries': 3,
-    'retry_delay': timedelta(minutes=10)
 }
 
 CLUSTER_NAME = 'dataengineering-test'
-JOB_NAME = '{{task.task_id}}-{{ds-nodash}}'
+JOB_NAME = '{{task.task_id}}-{{ds_nodash}}'
 
 dag = DAG(
     'dataproc_job_flow_dag',
@@ -53,16 +51,21 @@ with dag:
     )
 
 
-    def ensure_cluster_exists():
-        cluster = DataProcHook().get_conn().projects().regions().clusters().get(
-            project_Id=Variable.get('project'),
-            region=Variable.get('region'),
-            clusterName=CLUSTER_NAME
-        ).execute(num_retries=3)
-        if cluster is None or len(cluster) == 0 or 'clusterName' not in cluster:
-            return 'cluster_creater'
-        else:
+    def ensure_cluster_exists(**kwargs):
+        try:
+            cluster = DataProcHook().get_conn().projects().regions().clusters().get(
+                projectId=Variable.get('project'),
+                region='global',
+                clusterName=CLUSTER_NAME
+            ).execute(num_retries=3)
+
+            print('cluster is created already!')
             return 'step_adder'
+
+        except Exception as e:
+            print('Error:',e)
+            return 'cluster_creater'
+        
 
     cluster_checker = BranchPythonOperator(
         task_id='cluster_checker',
@@ -71,54 +74,60 @@ with dag:
     )
 
     cluster_creater = DataprocClusterCreateOperator(
-        task_id='cluster_creater',
+        task_id='cluster_creater',        
         cluster_name=CLUSTER_NAME,
         project_id=Variable.get('project'),
-        num_workers=1,
+        num_workers=2,
         master_disk_size=50,
         worker_disk_size=50,
+        autoscaling_policy=None,
+        master_machine_type='e2-standard-2',
+        worker_machine_type='e2-standard-2',
+        master_disk_type='pd-ssd',
+        worker_disk_type='pd-ssd',
         image_version='1.5',
-        internal_ip_only=True,
+        internal_ip_only=False,
         tags=['dataproc'],
         labels={'dataproc-cluster': CLUSTER_NAME},
         zone=Variable.get('zone'),
-        subnetwork_uri='projects/{}/region/{}/subnetworks/{}'.format(
+        subnetwork_uri='projects/{}/regions/{}/subnetworks/{}'.format(
             Variable.get('project'),
             Variable.get('region'),
-            Variable.get('subnet')),
+            Variable.get('subnet'))
         # service_account=Variable.get('serviceAccount')
     )
 
     step_adder = DataProcSparkOperator(
-        task_id='step_adder',
+        task_id='step_adder',        
         project_id=Variable.get('project'),
         main_class='Driver.MainApp',
         arguments=[
             '-p','Csvparser',
             '-i','Csv',
             '-o','parquet',                
-            '-s', "{{ task_instance.xcom_pull('parse_request', key='gslocation') }}", #'-s','gs://dataengineering-test/banking.csv',
-            '-d','gs://dataengineering-test/results/',
+            '-s', "{{ task_instance.xcom_pull('parse_request', key='gslocation') }}", #'gs://dataengineering-test/banking.csv'
+            '-d','gs://datapipeline-test-result/',
             '-c','job',
             '-m','append',
             '--input-options','header=true'
         ],
         job_name=JOB_NAME,
         cluster_name=CLUSTER_NAME,
-        dataproc_spark_jars=['gs://dataengineering-test/spark-engine_2.11-0.0.1.jar']
+        dataproc_spark_jars=['gs://dataengineering-test/spark-engine_2.12-0.0.1.jar'],
+        trigger_rule='one_success'
     )
 
     
-    step_checker = DataprocJobSensor(
-        task_id='step_checker',
-        project_id=Variable.get('project'),        
-        location=Variable.get('region'),
-        dataproc_job_id="{{ task_instance.xcom_pull(task_ids='step_adder') }}",
-        dag=dag
-    )
+    # step_checker = DataprocJobSensor(
+    #     task_id='step_checker',        
+    #     project_id=Variable.get('project'),        
+    #     location='global',
+    #     dataproc_job_id=JOB_NAME,
+    #     dag=dag
+    # )
 
     cluster_terminator = DataprocClusterDeleteOperator(
-        task_id='cluster_terminator',
+        task_id='cluster_terminator',        
         cluster_name=CLUSTER_NAME,
         project_id=Variable.get('project')
     )
@@ -131,4 +140,4 @@ with dag:
     parse_request >> cluster_checker
     cluster_checker >> cluster_creater >> step_adder
     cluster_checker >> step_adder
-    step_adder >> step_checker >> cluster_terminator >> end
+    step_adder >> cluster_terminator >> end
