@@ -15,7 +15,7 @@ object CsvJob {
         val data = spark.read.options(sparkParams.inOptions).csv(sparkParams.inPath)
 
         // transformation logic below
-        val resultDF = data.withColumn("source", lit("wcd"))
+        val resultDF = data.withColumn("source", lit("data-engineering"))
 
         // write to storage
         resultDF.write
