@@ -1,3 +1,0 @@
-FROM puckel/docker-airflow:1.10.9
-RUN curl -sSL https://sdk.cloud.google.com > /tmp/gcl && bash /tmp/gcl --install-dir=/usr/local/airflow/.local/lib/python3.7/site-packages/ 
-RUN pip install --upgrade google-api-python-client
