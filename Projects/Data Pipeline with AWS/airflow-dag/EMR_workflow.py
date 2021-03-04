@@ -18,7 +18,7 @@ DEFAULT_ARGS = {
     'email_on_failure': False,
     'email_on_retry': False
     'retries': 3,
-    'retry_delay': timedelta(minutes=60)
+    'retry_delay': timedelta(minutes=5)
 }
 
 CLUSTER_ID = 'j-1RFMC7DZOD6ZX'

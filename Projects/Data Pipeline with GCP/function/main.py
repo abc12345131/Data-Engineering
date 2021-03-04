@@ -1,6 +1,7 @@
 import json
 import subprocess
-from google.auth.transport.requests import Request
+import google.auth
+import google.auth.transport.requests
 from google.oauth2 import id_token
 import requests
 import six.moves.urllib.parse
@@ -15,9 +16,27 @@ def function_handler(event, context):
     data = json.dumps({"conf":{"gs_location": process_data}})
     print('The airflow payload: ' + str(data))
 
-    airflow_uri = 'https://b644c9698bf432494p-tp.appspot.com'
+
+    # Authenticate with Google Cloud.
+    # See: https://cloud.google.com/docs/authentication/getting-started
+    credentials, _ = google.auth.default(
+        scopes=['https://www.googleapis.com/auth/cloud-platform'])
+    authed_session = google.auth.transport.requests.AuthorizedSession(
+        credentials)
+
+    project_id = 'dataengineering-test'
+    location = 'us-central1'
+    composer_environment = 'mytestairflow'
     dag_name = 'dataproc_job_flow_dag'
-    webserver_url = airflow_uri + '/api/experimental/dags/' + dag_name + '/dag_runs'
+
+    environment_url = (
+        'https://composer.googleapis.com/v1beta1/projects/{}/locations/{}'
+        '/environments/{}').format(project_id, location, composer_environment)
+    composer_response = authed_session.request('GET', environment_url)
+    environment_data = composer_response.json()
+    airflow_uri = environment_data['config']['airflowUri']
+
+    print(airflow_uri)
 
     # The Composer environment response does not include the IAP client ID.
     # Make a second, unauthenticated HTTP request to the web server to get the
@@ -25,14 +44,17 @@ def function_handler(event, context):
     redirect_response = requests.get(airflow_uri, allow_redirects=False)
     redirect_location = redirect_response.headers['location']
 
+    print(redirect_response.headers)
+
     # Extract the client_id query parameter from the redirect.
     parsed = six.moves.urllib.parse.urlparse(redirect_location)
     query_string = six.moves.urllib.parse.parse_qs(parsed.query)
     client_id = query_string['client_id'][0]
 
-    
+    webserver_url = airflow_uri + '/api/experimental/dags/' + dag_name + '/dag_runs'
+   
     # Obtain an OpenID Connect (OIDC) token from metadata server or using service account.
-    google_open_id_connect_token = id_token.fetch_id_token(Request(), client_id)
+    google_open_id_connect_token = id_token.fetch_id_token(google.auth.transport.requests.Request(), client_id)
 
     print('google_open_id_connect_token:', google_open_id_connect_token)
 
@@ -45,21 +67,8 @@ def function_handler(event, context):
         
     print('returncode:', returncode)
 
-    # resp = requests.request(
-    #     method="POST", webserver_url,
-    #     headers={'Authorization': 'Bearer {}'.format(
-    #         google_open_id_connect_token)}, json=data)
-    # if resp.status_code == 403:
-    #     raise Exception('Service account does not have permission to '
-    #                     'access the IAP-protected application.')
-    # elif resp.status_code != 200:
-    #     raise Exception(
-    #         'Bad response from application: {!r} / {!r} / {!r}'.format(
-    #             resp.status_code, resp.headers, resp.text))
-    # else:
-    #     return resp.text
-
-    return {
-        'statusCode': 200,
-        'body': json.dumps('Function is working!')
-    }
+    if returncode==0:
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Function is working!')
+        }

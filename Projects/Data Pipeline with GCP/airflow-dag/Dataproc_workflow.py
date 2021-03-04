@@ -1,5 +1,14 @@
 # -*- coding: utf-8 -*-
 
+'''
+In the Airflow UI, set variables:
+project: GCP project id
+region: GCP region ('us-central1')
+subnet: VPC subnet id (short id, not the full uri) for me it's default
+zone: GCP zone ('us-central1-c')
+
+'''
+
 from datetime import datetime, timedelta
 import airflow
 from airflow import DAG, utils
@@ -11,14 +20,6 @@ from airflow.operators.python_operator import PythonOperator, BranchPythonOperat
 from airflow.operators.dummy_operator import DummyOperator
 from airflow.contrib.hooks.gcp_dataproc_hook import DataProcHook
 
-'''
-In the Airflow UI, set variables:
-project: GCP project id
-region: GCP region ('us-east1')
-subnet: VPC subnet id (short id, not the full uri) for me it's default
-zone: GCP zone ('us-east1-d')
-
-'''
 
 DEFAULT_ARGS = {
     'owner': 'airflow',
@@ -27,6 +28,8 @@ DEFAULT_ARGS = {
     'email': ['wbl@example.com'],
     'email_on_failure': False,
     'email_on_retry': False,
+    'retries': 3,
+    'retry_delay': timedelta(minutes=5),
 }
 
 CLUSTER_NAME = 'dataengineering-test'
