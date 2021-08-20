@@ -24,9 +24,9 @@ def function_handler(event, context):
     authed_session = google.auth.transport.requests.AuthorizedSession(
         credentials)
 
-    project_id = 'dataengineering-test'
-    location = 'us-central1'
-    composer_environment = 'mytestairflow'
+    project_id = 'helical-decoder-322615'
+    location = 'us-east1'
+    composer_environment = 'airflow'
     dag_name = 'dataproc_job_flow_dag'
 
     environment_url = (

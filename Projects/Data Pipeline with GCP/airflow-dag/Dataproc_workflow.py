@@ -3,9 +3,9 @@
 '''
 In the Airflow UI, set variables:
 project: GCP project id
-region: GCP region ('us-central1')
+region: GCP region (us-east1)
 subnet: VPC subnet id (short id, not the full uri) for me it's default
-zone: GCP zone ('us-central1-c')
+zone: GCP zone (us-east1-b)
 
 '''
 
@@ -32,7 +32,7 @@ DEFAULT_ARGS = {
     'retry_delay': timedelta(minutes=5),
 }
 
-CLUSTER_NAME = 'dataengineering-test'
+CLUSTER_NAME = 'data-engineering-cluster'
 JOB_NAME = '{{task.task_id}}-{{ds_nodash}}'
 
 dag = DAG(
@@ -109,14 +109,14 @@ with dag:
             '-i','Csv',
             '-o','parquet',                
             '-s', "{{ task_instance.xcom_pull('parse_request', key='gslocation') }}", #'gs://dataengineering-test/banking.csv'
-            '-d','gs://datapipeline-test-result/',
+            '-d','gs://datapipeline-project-results/',
             '-c','job',
             '-m','append',
             '--input-options','header=true'
         ],
         job_name=JOB_NAME,
         cluster_name=CLUSTER_NAME,
-        dataproc_spark_jars=['gs://dataengineering-test/spark-engine_2.12-0.0.1.jar'],
+        dataproc_spark_jars=['gs://data-engineering-project/spark-engine_2.12-0.0.1.jar'],
         trigger_rule='one_success'
     )
 
