@@ -15,7 +15,7 @@ from airflow import DAG, utils
 from airflow.models import Variable
 from airflow.contrib.operators.dataproc_operator import DataprocClusterCreateOperator, \
     DataprocClusterDeleteOperator, DataProcSparkOperator
-from airflow.providers.google.cloud.sensors.dataproc import DataprocJobSensor
+# from airflow.providers.google.cloud.sensors.dataproc import DataprocJobSensor
 from airflow.operators.python_operator import PythonOperator, BranchPythonOperator
 from airflow.operators.dummy_operator import DummyOperator
 from airflow.contrib.hooks.gcp_dataproc_hook import DataProcHook
@@ -67,7 +67,7 @@ with dag:
 
         except Exception as e:
             print('Error:',e)
-            return 'cluster_creater'
+            return 'cluster_creator'
         
 
     cluster_checker = BranchPythonOperator(
@@ -76,8 +76,8 @@ with dag:
         python_callable=ensure_cluster_exists
     )
 
-    cluster_creater = DataprocClusterCreateOperator(
-        task_id='cluster_creater',        
+    cluster_creator = DataprocClusterCreateOperator(
+        task_id='cluster_creator',        
         cluster_name=CLUSTER_NAME,
         project_id=Variable.get('project'),
         num_workers=2,
@@ -124,9 +124,8 @@ with dag:
     # step_checker = DataprocJobSensor(
     #     task_id='step_checker',        
     #     project_id=Variable.get('project'),        
-    #     location='global',
-    #     dataproc_job_id=JOB_NAME,
-    #     dag=dag
+    #     region=Variable.get('region'),
+    #     dataproc_job_id=????,
     # )
 
     cluster_terminator = DataprocClusterDeleteOperator(
@@ -137,10 +136,9 @@ with dag:
 
     end = DummyOperator(
         task_id='end',
-        trigger_rule='one_success'
     )
 
     parse_request >> cluster_checker
-    cluster_checker >> cluster_creater >> step_adder
+    cluster_checker >> cluster_creator >> step_adder
     cluster_checker >> step_adder
     step_adder >> cluster_terminator >> end
