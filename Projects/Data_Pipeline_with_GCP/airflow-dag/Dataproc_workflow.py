@@ -117,7 +117,7 @@ with dag:
         job_name=JOB_NAME,
         cluster_name=CLUSTER_NAME,
         dataproc_spark_jars=['gs://data-engineering-project/spark-engine_2.12-0.0.1.jar'],
-        trigger_rule='one_success'
+        trigger_rule='all_done'
     )
 
     

@@ -24,7 +24,7 @@ DEFAULT_ARGS = {
 }
 
 CLUSTER_NAME = 'EMR-test'
-cluster_id = None
+CLUSTER_ID = "{{ task_instance.xcom_pull('parse_id', key='clusterid') }}"
 
 JOB_FLOW_OVERRIDES = {
     'Name': CLUSTER_NAME,
@@ -57,8 +57,8 @@ JOB_FLOW_OVERRIDES = {
         'KeepJobFlowAliveWhenNoSteps': True,
         'TerminationProtected': False,
     },
-    'JobFlowRole': 'admin',
-    'ServiceRole': 'admin',
+    'JobFlowRole': 'EMR_EC2_DefaultRole',
+    'ServiceRole': 'EMR_DefaultRole'
 }
 
 SPARK_TEST_STEPS = [
@@ -68,18 +68,18 @@ SPARK_TEST_STEPS = [
         'HadoopJarStep': {
             'Jar': 'command-runner.jar',
             'Args': [
-                './bin/spark-submit', 
+                'spark-submit', 
                 '--class', 'Driver.MainApp',
-                '--master', 'yarn',
-                '--deploy-mode','cluster',
-                '--executor-memory','3g',
-                '--num-executors','2',
-                's3://data-engineering-project/spark-engine_2.12-0.0.1.jar',
+                # '--master', 'yarn',
+                # '--deploy-mode','cluster',
+                # '--executor-memory','3g',
+                # '--num-executors','2',
+                's3://data-engineering-project/spark-engine_2.11-0.0.2.jar',
                 '-p','Csvparser',
                 '-i','Csv',
                 '-o','parquet',                
                 '-s', "{{ task_instance.xcom_pull('parse_request', key='s3location') }}", #'s3a://data-engineering-project/banking.csv'
-                '-d','s3a://data-engineering-test-results-bw0303/',
+                '-d','s3a://data-engineering-test-results-bw/',
                 '-c','job',
                 '-m','append',
                 '--input-options','header=true'
@@ -104,7 +104,7 @@ with dag:
     parse_request = PythonOperator(
         task_id='parse_request',
         provide_context=True,
-        python_callable=retrieve_s3_file,
+        python_callable=retrieve_s3_file
     )
 
     def ensure_cluster_exists(**kwargs):
@@ -114,12 +114,13 @@ with dag:
             ])
 
             matching_clusters = list(
-                filter(lambda cluster: cluster['Name'] == emr_cluster_name, response['Clusters'])
+                filter(lambda cluster: cluster['Name'] == CLUSTER_NAME, response['Clusters'])
             )
             if (len(matching_clusters) >= 1):
                 print('cluster is created already!')
                 cluster_id = matching_clusters[0]['Id']
-                return 'step_adder'
+                kwargs['ti'].xcom_push(key = 'clusterid', value = cluster_id)
+                return 'parse_id'
             else:
                 print('cluster does not exist!')
                 return 'cluster_creator'
@@ -142,14 +143,29 @@ with dag:
         emr_conn_id='emr_default',
     )
 
-    CLUSTER_ID = cluster_id or "{{ task_instance.xcom_pull('cluster_creator', key='return_value') }}"
+    def parse_cluster_id(**kwargs):
+        cluster = kwargs['ti'].xcom_pull('cluster_checker', key='clusterid')
+        nocluster = kwargs['ti'].xcom_pull('cluster_creator', key='return_value')
+        if(cluster):
+            print('cluster:', cluster)
+            kwargs['ti'].xcom_push(key = 'clusterid', value = cluster)
+        else:
+            print('nocluster:', nocluster)
+            kwargs['ti'].xcom_push(key = 'clusterid', value = nocluster)
+                
+    parse_id = PythonOperator(
+        task_id='parse_id',
+        provide_context=True,
+        python_callable=parse_cluster_id,
+        trigger_rule='all_done'
+    )
+
 
     step_adder = EmrAddStepsOperator(
         task_id='step_adder',
         job_flow_id=CLUSTER_ID,
         aws_conn_id='aws_default',
-        steps=SPARK_TEST_STEPS,
-        trigger_rule='one_success'
+        steps=SPARK_TEST_STEPS
     )
 
     step_checker = EmrStepSensor(
@@ -170,6 +186,6 @@ with dag:
     )
 
     parse_request >> cluster_checker
-    cluster_checker >> cluster_creator >> step_adder
-    cluster_checker >> step_adder
-    step_adder >> step_checker >> cluster_terminator >> end
+    cluster_checker >> cluster_creator >> parse_id
+    cluster_checker >> parse_id
+    parse_id >> step_adder >> step_checker >> cluster_terminator >> end
