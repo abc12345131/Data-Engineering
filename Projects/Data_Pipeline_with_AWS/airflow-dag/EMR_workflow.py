@@ -28,7 +28,7 @@ cluster_id = None
 
 JOB_FLOW_OVERRIDES = {
     'Name': CLUSTER_NAME,
-    'ReleaseLabel': 'emr-5.30.1',
+    'ReleaseLabel': 'emr-5.29.0',
     "Applications": [ 
         { 
             "Name": "Spark"
